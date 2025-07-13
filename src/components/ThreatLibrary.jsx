@@ -1,130 +1,101 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import apiService from '../services/api';
 
 const ThreatLibrary = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState('all');
   const [selectedSeverity, setSelectedSeverity] = useState('all');
   const [selectedSource, setSelectedSource] = useState('all');
+  const [threatLibrary, setThreatLibrary] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const threatLibrary = [
-    {
-      id: 1,
-      type: 'IP Address',
-      value: '192.168.1.100',
-      severity: 'Critical',
-      source: 'RSS Feed 1',
-      firstSeen: '2024-01-15',
-      lastSeen: '2024-01-20',
-      description: 'Malicious IP address associated with ransomware distribution',
-      tags: ['ransomware', 'malware', 'c2'],
-      metadata: {
-        country: 'Russia',
-        asn: 'AS12345',
-        isp: 'Malicious ISP',
-        reputation: 'Malicious',
-        relatedDomains: ['evil.com', 'malware.net'],
-        relatedHashes: ['abc123...', 'def456...']
-      }
-    },
-    {
-      id: 2,
-      type: 'Domain',
-      value: 'malware.example.com',
-      severity: 'High',
-      source: 'Atom Feed 3',
-      firstSeen: '2024-01-12',
-      lastSeen: '2024-01-18',
-      description: 'Phishing domain targeting financial institutions',
-      tags: ['phishing', 'financial', 'credential-theft'],
-      metadata: {
-        registrar: 'Evil Registrar',
-        creationDate: '2024-01-01',
-        expirationDate: '2025-01-01',
-        nameservers: ['ns1.evil.com', 'ns2.evil.com'],
-        relatedIPs: ['192.168.1.100', '10.0.0.1'],
-        sslCertificate: 'Valid'
-      }
-    },
-    {
-      id: 3,
-      type: 'Hash (MD5)',
-      value: 'd41d8cd98f00b204e9800998ecf8427e',
-      severity: 'Medium',
-      source: 'YAML Feed 2',
-      firstSeen: '2024-01-10',
-      lastSeen: '2024-01-15',
-      description: 'Trojan horse variant with advanced evasion techniques',
-      tags: ['trojan', 'evasion', 'persistence'],
-      metadata: {
-        fileType: 'PE32',
-        fileSize: '2.5MB',
-        compilationDate: '2024-01-05',
-        entropy: '7.8',
-        relatedIPs: ['192.168.1.100'],
-        relatedDomains: ['malware.example.com'],
-        antivirusDetection: '15/70'
-      }
-    },
-    {
-      id: 4,
-      type: 'URL',
-      value: 'https://evil.com/payload.exe',
-      severity: 'Critical',
-      source: 'RSS Feed 5',
-      firstSeen: '2024-01-08',
-      lastSeen: '2024-01-14',
-      description: 'Malicious URL serving ransomware payload',
-      tags: ['ransomware', 'payload', 'download'],
-      metadata: {
-        protocol: 'HTTPS',
-        port: '443',
-        path: '/payload.exe',
-        responseCode: '200',
-        contentType: 'application/octet-stream',
-        relatedIPs: ['192.168.1.100'],
-        relatedDomains: ['evil.com']
-      }
-    },
-    {
-      id: 5,
-      type: 'Email',
-      value: 'phish@evil.com',
-      severity: 'High',
-      source: 'Atom Feed 1',
-      firstSeen: '2024-01-05',
-      lastSeen: '2024-01-12',
-      description: 'Phishing email address used in credential theft campaigns',
-      tags: ['phishing', 'email', 'credential-theft'],
-      metadata: {
-        emailProvider: 'Evil Mail',
-        firstSeen: '2024-01-05',
-        lastSeen: '2024-01-12',
-        relatedDomains: ['evil.com'],
-        relatedIPs: ['192.168.1.100'],
-        campaign: 'Financial Phishing 2024'
-      }
-    },
-    {
-      id: 6,
-      type: 'Hash (SHA256)',
-      value: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-      severity: 'Medium',
-      source: 'RSS Feed 3',
-      firstSeen: '2024-01-03',
-      lastSeen: '2024-01-10',
-      description: 'Spyware variant targeting corporate networks',
-      tags: ['spyware', 'corporate', 'data-exfiltration'],
-      metadata: {
-        fileType: 'PE32+',
-        fileSize: '1.8MB',
-        compilationDate: '2024-01-01',
-        entropy: '7.2',
-        relatedIPs: ['10.0.0.1'],
-        relatedDomains: ['spyware.net'],
-        antivirusDetection: '8/70'
-      }
+  useEffect(() => {
+    fetchThreatLibrary();
+  }, []);
+
+  const fetchThreatLibrary = async () => {
+    try {
+      setLoading(true);
+      const threats = await apiService.fetchThreats();
+      
+      // Transform the data to match the expected format
+      const transformedThreats = threats.map(threat => ({
+        id: threat._id,
+        type: extractThreatType(threat.input),
+        value: threat.input,
+        severity: threat.severity || 'Medium',
+        source: 'AI Analysis',
+        firstSeen: formatDate(threat.timestamp),
+        lastSeen: formatDate(threat.timestamp),
+        description: threat.summary ? threat.summary.substring(0, 200) + '...' : 'No description available',
+        tags: extractTags(threat.input, threat.summary),
+        metadata: {
+          timestamp: formatDate(threat.timestamp),
+          severity: threat.severity || 'Medium',
+          source: 'AI Analysis',
+          summary: threat.summary ? threat.summary.substring(0, 100) + '...' : 'No summary available'
+        }
+      }));
+
+      setThreatLibrary(transformedThreats);
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching threat library:', err);
+      setError('Failed to load threat library');
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
+
+  const extractThreatType = (input) => {
+    if (!input) return 'Unknown';
+    
+    const inputLower = input.toLowerCase();
+    if (inputLower.includes('ddos') || inputLower.includes('dos')) return 'DDoS';
+    if (inputLower.includes('phishing')) return 'Phishing';
+    if (inputLower.includes('malware') || inputLower.includes('ransomware') || inputLower.includes('trojan')) return 'Malware';
+    if (inputLower.includes('apt')) return 'APT';
+    if (inputLower.includes('spam')) return 'Spam';
+    if (inputLower.includes('botnet')) return 'Botnet';
+    if (inputLower.includes('ip') || /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/.test(input)) return 'IP Address';
+    if (inputLower.includes('domain') || inputLower.includes('.com') || inputLower.includes('.net')) return 'Domain';
+    if (inputLower.includes('url') || inputLower.includes('http')) return 'URL';
+    if (inputLower.includes('hash') || /[a-fA-F0-9]{32,64}/.test(input)) return 'Hash';
+    if (inputLower.includes('@') && inputLower.includes('.')) return 'Email';
+    
+    return 'Threat';
+  };
+
+  const extractTags = (input, summary) => {
+    const tags = [];
+    const text = (input + ' ' + (summary || '')).toLowerCase();
+    
+    if (text.includes('ddos') || text.includes('dos')) tags.push('ddos');
+    if (text.includes('phishing')) tags.push('phishing');
+    if (text.includes('malware')) tags.push('malware');
+    if (text.includes('ransomware')) tags.push('ransomware');
+    if (text.includes('trojan')) tags.push('trojan');
+    if (text.includes('apt')) tags.push('apt');
+    if (text.includes('spam')) tags.push('spam');
+    if (text.includes('botnet')) tags.push('botnet');
+    if (text.includes('credential')) tags.push('credential-theft');
+    if (text.includes('financial')) tags.push('financial');
+    if (text.includes('corporate')) tags.push('corporate');
+    if (text.includes('government')) tags.push('government');
+    if (text.includes('healthcare')) tags.push('healthcare');
+    
+    return tags.slice(0, 5); // Limit to 5 tags
+  };
+
+  const formatDate = (timestamp) => {
+    if (!timestamp) return 'Unknown';
+    return new Date(timestamp).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+  };
 
   const getSeverityColor = (severity) => {
     switch (severity.toLowerCase()) {
@@ -150,10 +121,13 @@ const ThreatLibrary = () => {
     switch (type.toLowerCase()) {
       case 'ip address': return '🌐';
       case 'domain': return '🔗';
-      case 'hash (md5)': return '🔒';
-      case 'hash (sha256)': return '🔐';
+      case 'hash': return '🔒';
       case 'url': return '📡';
       case 'email': return '📧';
+      case 'ddos': return '⚡';
+      case 'phishing': return '🎣';
+      case 'malware': return '🦠';
+      case 'apt': return '👥';
       default: return '⚠️';
     }
   };
@@ -171,11 +145,40 @@ const ThreatLibrary = () => {
 
   const stats = {
     total: threatLibrary.length,
-    critical: threatLibrary.filter(t => t.severity === 'Critical').length,
-    high: threatLibrary.filter(t => t.severity === 'High').length,
-    medium: threatLibrary.filter(t => t.severity === 'Medium').length,
-    low: threatLibrary.filter(t => t.severity === 'Low').length
+    critical: threatLibrary.filter(t => t.severity.toLowerCase() === 'critical').length,
+    high: threatLibrary.filter(t => t.severity.toLowerCase() === 'high').length,
+    medium: threatLibrary.filter(t => t.severity.toLowerCase() === 'medium').length,
+    low: threatLibrary.filter(t => t.severity.toLowerCase() === 'low').length
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading threat library...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-400 text-6xl mb-4">⚠️</div>
+          <p className="text-red-400 mb-2">Error loading threat library</p>
+          <p className="text-gray-400 text-sm">{error}</p>
+          <button 
+            onClick={fetchThreatLibrary}
+            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6">
@@ -235,6 +238,10 @@ const ThreatLibrary = () => {
               <option value="hash">Hash</option>
               <option value="url">URL</option>
               <option value="email">Email</option>
+              <option value="ddos">DDoS</option>
+              <option value="phishing">Phishing</option>
+              <option value="malware">Malware</option>
+              <option value="apt">APT</option>
             </select>
           </div>
           <div>
@@ -259,9 +266,7 @@ const ThreatLibrary = () => {
               className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg px-4 py-2 text-white focus:border-blue-400 focus:outline-none"
             >
               <option value="all">All Sources</option>
-              <option value="rss">RSS Feeds</option>
-              <option value="atom">Atom Feeds</option>
-              <option value="yaml">YAML Feeds</option>
+              <option value="ai">AI Analysis</option>
             </select>
           </div>
         </div>

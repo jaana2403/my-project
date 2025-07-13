@@ -4,7 +4,7 @@ import HomePage from "./components/HomePage";
 import { Dashboard } from "./components/Dashboard";
 import { HistoricalAnalysis } from "./components/HistoricalAnalysis";
 import { ThreatLibrary } from "./components/ThreatLibrary";
-import { FeedHealth } from "./components/FeedHealth";
+import FeedHealth from "./components/FeedHealth";
 import "./App.css";
 
 const App = () => {

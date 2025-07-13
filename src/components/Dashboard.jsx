@@ -1,42 +1,108 @@
 import React, { useState, useEffect } from 'react';
+import apiService from '../services/api';
 
 const Dashboard = () => {
   const [liveData, setLiveData] = useState({
-    totalThreats: 1247,
-    activeFeeds: 23,
-    criticalAlerts: 8,
+    totalThreats: 0,
+    activeFeeds: 0,
+    criticalAlerts: 0,
     lastUpdate: new Date().toLocaleTimeString()
   });
 
-  const [threatTrends, setThreatTrends] = useState([
-    { day: 'Mon', threats: 45, severity: 'high' },
-    { day: 'Tue', threats: 67, severity: 'critical' },
-    { day: 'Wed', threats: 34, severity: 'medium' },
-    { day: 'Thu', threats: 89, severity: 'high' },
-    { day: 'Fri', threats: 56, severity: 'medium' },
-    { day: 'Sat', threats: 23, severity: 'low' },
-    { day: 'Sun', threats: 12, severity: 'low' }
-  ]);
-
-  const [recentThreats, setRecentThreats] = useState([
-    { id: 1, type: 'Malware', severity: 'Critical', source: 'RSS Feed 1', timestamp: '2 min ago', description: 'New ransomware variant detected' },
-    { id: 2, type: 'Phishing', severity: 'High', source: 'Atom Feed 3', timestamp: '5 min ago', description: 'Sophisticated phishing campaign targeting financial sector' },
-    { id: 3, type: 'DDoS', severity: 'Medium', source: 'YAML Feed 2', timestamp: '8 min ago', description: 'DDoS attack patterns observed' },
-    { id: 4, type: 'APT', severity: 'Critical', source: 'RSS Feed 5', timestamp: '12 min ago', description: 'Advanced persistent threat activity detected' },
-    { id: 5, type: 'Malware', severity: 'High', source: 'Atom Feed 1', timestamp: '15 min ago', description: 'Trojan horse variant spreading rapidly' }
-  ]);
+  const [threatTrends, setThreatTrends] = useState([]);
+  const [recentThreats, setRecentThreats] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
+    fetchDashboardData();
+    
+    // Set up real-time updates every 30 seconds
     const interval = setInterval(() => {
-      setLiveData(prev => ({
-        ...prev,
-        totalThreats: prev.totalThreats + Math.floor(Math.random() * 3),
-        lastUpdate: new Date().toLocaleTimeString()
-      }));
-    }, 5000);
+      fetchDashboardData();
+    }, 30000);
 
     return () => clearInterval(interval);
   }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch all data in parallel
+      const [stats, trends, recent] = await Promise.all([
+        apiService.fetchThreatStats(),
+        apiService.fetchThreatTrends(7),
+        apiService.fetchRecentThreats(5)
+      ]);
+
+      // Update live data
+      setLiveData({
+        totalThreats: stats.total || 0,
+        activeFeeds: 23, // This would come from feed health API
+        criticalAlerts: stats.critical || 0,
+        lastUpdate: new Date().toLocaleTimeString()
+      });
+
+      // Process threat trends
+      const processedTrends = trends.map((trend, index) => ({
+        day: new Date(trend.date).toLocaleDateString('en-US', { weekday: 'short' }),
+        threats: trend.count || 0,
+        severity: trend.avgSeverity || 'medium'
+      }));
+
+      setThreatTrends(processedTrends);
+
+      // Process recent threats
+      const processedRecentThreats = recent.map(threat => ({
+        id: threat._id,
+        type: extractThreatType(threat.input),
+        severity: threat.severity || 'Medium',
+        source: 'AI Analysis',
+        timestamp: formatTimeAgo(threat.timestamp),
+        description: threat.summary ? threat.summary.substring(0, 100) + '...' : 'No description available'
+      }));
+
+      setRecentThreats(processedRecentThreats);
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+      setError('Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const extractThreatType = (input) => {
+    if (!input) return 'Unknown';
+    
+    const inputLower = input.toLowerCase();
+    if (inputLower.includes('ddos') || inputLower.includes('dos')) return 'DDoS';
+    if (inputLower.includes('phishing')) return 'Phishing';
+    if (inputLower.includes('malware') || inputLower.includes('ransomware') || inputLower.includes('trojan')) return 'Malware';
+    if (inputLower.includes('apt')) return 'APT';
+    if (inputLower.includes('spam')) return 'Spam';
+    if (inputLower.includes('botnet')) return 'Botnet';
+    
+    return 'Threat';
+  };
+
+  const formatTimeAgo = (timestamp) => {
+    if (!timestamp) return 'Unknown';
+    
+    const now = new Date();
+    const threatTime = new Date(timestamp);
+    const diffInMinutes = Math.floor((now - threatTime) / (1000 * 60));
+    
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes} min ago`;
+    
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) return `${diffInHours} hour${diffInHours > 1 ? 's' : ''} ago`;
+    
+    const diffInDays = Math.floor(diffInHours / 24);
+    return `${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`;
+  };
 
   const getSeverityColor = (severity) => {
     switch (severity.toLowerCase()) {
@@ -57,6 +123,35 @@ const Dashboard = () => {
       default: return 'bg-gray-500/20 border-gray-500/30';
     }
   };
+
+  if (loading && recentThreats.length === 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading dashboard data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-400 text-6xl mb-4">⚠️</div>
+          <p className="text-red-400 mb-2">Error loading dashboard</p>
+          <p className="text-gray-400 text-sm">{error}</p>
+          <button 
+            onClick={fetchDashboardData}
+            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6">
@@ -86,7 +181,7 @@ const Dashboard = () => {
           </div>
           <div className="mt-4 flex items-center text-sm">
             <span className="text-green-400 mr-1">↑</span>
-            <span className="text-gray-400">+12% from yesterday</span>
+            <span className="text-gray-400">Live from MongoDB</span>
           </div>
         </div>
 
@@ -150,18 +245,24 @@ const Dashboard = () => {
         {/* Threat Trends Chart */}
         <div className="bg-gradient-to-br from-slate-800/50 to-slate-700/50 backdrop-blur-sm border border-slate-600/50 rounded-xl p-6">
           <h3 className="text-xl font-semibold text-blue-400 mb-6">Threat Trends (Last 7 Days)</h3>
-          <div className="h-64 flex items-end justify-between space-x-2">
-            {threatTrends.map((day, index) => (
-              <div key={index} className="flex flex-col items-center flex-1">
-                <div 
-                  className="w-full bg-gradient-to-t from-blue-500/60 to-blue-400/40 rounded-t-lg transition-all duration-300 hover:from-blue-400/80 hover:to-blue-300/60"
-                  style={{ height: `${(day.threats / 100) * 200}px` }}
-                ></div>
-                <div className="mt-2 text-xs text-gray-400">{day.day}</div>
-                <div className="text-xs font-medium text-white">{day.threats}</div>
-              </div>
-            ))}
-          </div>
+          {threatTrends.length > 0 ? (
+            <div className="h-64 flex items-end justify-between space-x-2">
+              {threatTrends.map((day, index) => (
+                <div key={index} className="flex flex-col items-center flex-1">
+                  <div 
+                    className="w-full bg-gradient-to-t from-blue-500/60 to-blue-400/40 rounded-t-lg transition-all duration-300 hover:from-blue-400/80 hover:to-blue-300/60"
+                    style={{ height: `${Math.max((day.threats / Math.max(...threatTrends.map(d => d.threats))) * 200, 10)}px` }}
+                  ></div>
+                  <div className="mt-2 text-xs text-gray-400">{day.day}</div>
+                  <div className="text-xs font-medium text-white">{day.threats}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="h-64 flex items-center justify-center text-gray-400">
+              No trend data available
+            </div>
+          )}
         </div>
 
         {/* Threat Distribution */}
@@ -223,34 +324,40 @@ const Dashboard = () => {
       {/* Recent Threats Table */}
       <div className="bg-gradient-to-br from-slate-800/50 to-slate-700/50 backdrop-blur-sm border border-slate-600/50 rounded-xl p-6">
         <h3 className="text-xl font-semibold text-blue-400 mb-6">Recent Threats</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-600/50">
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Type</th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Severity</th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Source</th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Time</th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Description</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentThreats.map((threat) => (
-                <tr key={threat.id} className="border-b border-slate-600/30 hover:bg-slate-700/30 transition-colors">
-                  <td className="py-3 px-4 text-sm text-white">{threat.type}</td>
-                  <td className="py-3 px-4">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getSeverityBgColor(threat.severity)} ${getSeverityColor(threat.severity)}`}>
-                      {threat.severity}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-300">{threat.source}</td>
-                  <td className="py-3 px-4 text-sm text-gray-400">{threat.timestamp}</td>
-                  <td className="py-3 px-4 text-sm text-gray-300">{threat.description}</td>
+        {recentThreats.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-600/50">
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Type</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Severity</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Source</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Time</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Description</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {recentThreats.map((threat) => (
+                  <tr key={threat.id} className="border-b border-slate-600/30 hover:bg-slate-700/30 transition-colors">
+                    <td className="py-3 px-4 text-sm text-white">{threat.type}</td>
+                    <td className="py-3 px-4">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getSeverityBgColor(threat.severity)} ${getSeverityColor(threat.severity)}`}>
+                        {threat.severity}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-sm text-gray-300">{threat.source}</td>
+                    <td className="py-3 px-4 text-sm text-gray-400">{threat.timestamp}</td>
+                    <td className="py-3 px-4 text-sm text-gray-300">{threat.description}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-400">
+            No recent threats found
+          </div>
+        )}
       </div>
     </div>
   );
